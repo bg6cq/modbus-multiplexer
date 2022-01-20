@@ -33,7 +33,7 @@
 #define TCP 1
 #define RTU 2
 
-int rtu_fd;
+int dev_fd;
 int debug = 0;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 int s_type = 1;
@@ -160,44 +160,114 @@ void *Process(void *ptr)
 	setsockopt(tcp_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
 	while (1) {
-		int nw;
-		int n;
-		// read from tcp_fd
-		while (1) {
-			n = read(tcp_fd, tcpbuf, 6);
-			if (n >= 0)
+		int n, nw, expected_len;
+		tcpbuf[0] = 0;
+		tcpbuf[1] = 0;
+		tcpbuf[2] = 0;
+		tcpbuf[3] = 0;
+
+		// STEP 1: read from tcp_fd to rtubuf
+		if (s_type == TCP) {
+			while (1) {
+				n = read(tcp_fd, tcpbuf, 6);
+				if (n >= 0)
+					break;
+				if ((errno == EAGAIN) || (errno == EINTR))
+					continue;
 				break;
-			if ((errno == EAGAIN) || (errno == EINTR))
-				continue;
-			break;
-		}
+			}
 #ifdef DEBUG
-		printf("Thread %ld read %d bytes from tcp\n", pthread_self(), n);
+			printf("Thread %ld read %d bytes from tcp_fd\n", pthread_self(), n);
 #endif
-		if (n != 6) {
-			printf("Thread %ld read MBAP error, expect 6, get %d, errno=%d\n",
-			       pthread_self(), n, errno);
-			close(tcp_fd);
-			pthread_exit(NULL);
-		}
-		int expected_len = htons(*((unsigned short *)(tcpbuf + 4)));
-		// printf("expect len: %d\n", expected_len);
-		n = read(tcp_fd, rtubuf, expected_len);
+			if (n != 6) {
+				printf
+				    ("Thread %ld read tcp_fd MBAP error, expect 6, get %d, errno=%d\n",
+				     pthread_self(), n, errno);
+				close(tcp_fd);
+				pthread_exit(NULL);
+			}
+			expected_len = htons(*((unsigned short *)(tcpbuf + 4)));
+			n = read(tcp_fd, rtubuf, expected_len);
 #ifdef DEBUG
-		printf("Thread %ld read %d bytes from tcp\n", pthread_self(), n);
+			printf("Thread %ld read %d bytes from tcp_fd\n", pthread_self(), n);
 #endif
-		if (n != expected_len) {
-			printf("Thread %ld read tcp data error, expect %d, get %d\n",
-			       pthread_self(), expected_len, n);
-			close(tcp_fd);
-			pthread_exit(NULL);
+			if (n != expected_len) {
+				printf("Thread %ld read tcp_fd error, expect %d, get %d\n",
+				       pthread_self(), expected_len, n);
+				close(tcp_fd);
+				pthread_exit(NULL);
+			}
+
+			uint16_t crc = crc16(rtubuf, n);
+			rtubuf[n] = crc >> 8;
+			rtubuf[n + 1] = crc & 0x00FF;
+			n = n + 2;
+		} else if (s_type == RTU) {
+			int packet_len;
+			while (1) {
+				n = read(tcp_fd, rtubuf, 8);
+				if (n >= 0)
+					break;
+				if ((errno == EAGAIN) || (errno == EINTR))
+					continue;
+				break;
+			}
+#ifdef DEBUG
+			printf("Thread %ld read %d bytes from tcp_fd\n", pthread_self(), n);
+#endif
+			if (n != 8) {
+				printf
+				    ("Thread %ld read tcp_fd rtu header error, expect 8, get %d, errno=%d\n",
+				     pthread_self(), n, errno);
+				close(tcp_fd);
+				pthread_exit(NULL);
+			}
+			// expcted_len is the full packet len
+			switch (rtubuf[1]) {	//Function code
+			case 1:	//Read coils
+			case 2:	//Read inputs
+			case 3:	//Read holding regs
+			case 4:	//Read input regs
+			case 5:	//Write coil
+			case 6:	//Write holding
+				packet_len = 8;
+				break;
+			case 15:	//Write coils
+			case 16:	//Write holdings
+				packet_len = 8 + rtubuf[6] + 1;
+				break;
+			default:
+				printf("Thread %ld unsupported function code: %d\n", pthread_self(),
+				       rtubuf[1]);
+				close(tcp_fd);
+				pthread_exit(NULL);
+			}
+			if (packet_len > 8) {	// need read more
+				n = read(tcp_fd, rtubuf + 8, packet_len - 8);
+#ifdef DEBUG
+				printf("Thread %ld read %d bytes from tcp_fd\n", pthread_self(), n);
+#endif
+				if (n != packet_len - 8) {
+					printf
+					    ("Thread %ld read tcp_fd error, expect %d, get %d\n",
+					     pthread_self(), packet_len - 8, n);
+					close(tcp_fd);
+					pthread_exit(NULL);
+				}
+				n = packet_len;
+			} else
+				n = 8;
+
+			uint16_t crc = crc16(rtubuf, n - 2);
+			if ((rtubuf[n - 2] != (crc >> 8)) || (rtubuf[n - 1] != (crc & 0x00FF))) {
+				printf
+				    ("Thread %ld read tcp_fd CRC error, expect %02X%02X, get %02X%02X\n",
+				     pthread_self(), crc >> 8, crc & 0xff, rtubuf[n - 2],
+				     rtubuf[n - 1]);
+				close(tcp_fd);
+				pthread_exit(NULL);
+			};
 		}
-
-		uint16_t crc = crc16(rtubuf, n);
-		rtubuf[n] = crc >> 8;
-		rtubuf[n + 1] = crc & 0x00FF;
-		n = n + 2;
-
 		switch (rtubuf[1]) {	//Function code
 		case 1:	//Read coils
 		case 2:	//Read inputs
@@ -229,42 +299,96 @@ void *Process(void *ptr)
 
 		pthread_mutex_lock(&mutex);
 
-		// write to rtu_fd
-		nw = write(rtu_fd, rtubuf, n);
+		// now data read from s_socket in rtubuf, len is n
+
+		// STEP 2: write to dev_fd
+		if (r_type == TCP) {
+			*((unsigned short *)(tcpbuf + 4)) = htons(n - 2);
+			memcpy(tcpbuf + 6, rtubuf, n - 2);
+			nw = write(dev_fd, tcpbuf, n - 2 + 6);
 #ifdef DEBUG
-		printf("Thread %ld write %d bytes to rtutcp, return %d\n", pthread_self(), n, nw);
+			printf("Thread %ld write %d bytes to dev_fd, return %d\n",
+			       pthread_self(), n, nw);
 #endif
-
-		// read from rtu_fd
-		n = read(rtu_fd, rtubuf, expected_len);
+		} else if (r_type == RTU) {
+			nw = write(dev_fd, rtubuf, n);
 #ifdef DEBUG
-		printf("Thread %ld read %d bytes from rtutcp\n", pthread_self(), n);
+			printf("Thread %ld write %d bytes to dev_fd, return %d\n", pthread_self(),
+			       n, nw);
 #endif
-
-		pthread_mutex_unlock(&mutex);
-
-		if (n != expected_len) {
-			printf("Thread %ld read rtu data error, expect %d, get %d, exit all\n",
-			       pthread_self(), expected_len, n);
-			exit(0);
 		}
 
-		uint16_t crc_calculated;
-		uint16_t crc_received;
-		crc_calculated = crc16(rtubuf, n - 2);
-		crc_received = (rtubuf[n - 2] << 8) | rtubuf[n - 1];
-		if (crc_calculated != crc_received) {
-			printf("Thread %ld rtu CRC error, exit all\n", pthread_self());
-			exit(0);
-		}
-		expected_len = n - 2;
-		memcpy(tcpbuf + 6, rtubuf, expected_len);
-		*((unsigned short *)(tcpbuf + 4)) = htons(expected_len);
-		nw = write(tcp_fd, tcpbuf, expected_len + 6);
+		// STEP 3: read from dev_fd
+		if (r_type == TCP) {
+			n = read(dev_fd, tcpbuf, 6);
 #ifdef DEBUG
-		printf("Thread %ld write %d bytes to tcp, return %d\n", pthread_self(),
-		       expected_len + 6, nw);
+			printf("Thread %ld read %d bytes from dev_fd\n", pthread_self(), n);
 #endif
+			if (n != 6) {
+				printf
+				    ("Thread %ld read dev_fd MBAP error, expect 6, get %d, errno=%d\n",
+				     pthread_self(), n, errno);
+				exit(0);
+			}
+			expected_len = htons(*((unsigned short *)(tcpbuf + 4)));
+			n = read(dev_fd, rtubuf, expected_len);
+#ifdef DEBUG
+			printf("Thread %ld read %d bytes from dev_fd\n", pthread_self(), n);
+#endif
+			pthread_mutex_unlock(&mutex);
+
+			if (n != expected_len) {
+				printf("Thread %ld read dev_fd error, expect %d, get %d\n",
+				       pthread_self(), expected_len, n);
+				exit(0);
+			}
+
+			uint16_t crc = crc16(rtubuf, n);
+			rtubuf[n] = crc >> 8;
+			rtubuf[n + 1] = crc & 0x00FF;
+			n = n + 2;
+
+		} else if (r_type == RTU) {
+			n = read(dev_fd, rtubuf, expected_len);
+#ifdef DEBUG
+			printf("Thread %ld read %d bytes from dev_fd\n", pthread_self(), n);
+#endif
+
+			pthread_mutex_unlock(&mutex);
+
+			if (n != expected_len) {
+				printf
+				    ("Thread %ld read dev_fd error, expect %d, get %d, exit all\n",
+				     pthread_self(), expected_len, n);
+				exit(0);
+			}
+
+			uint16_t crc_calculated;
+			uint16_t crc_received;
+			crc_calculated = crc16(rtubuf, n - 2);
+			crc_received = (rtubuf[n - 2] << 8) | rtubuf[n - 1];
+			if (crc_calculated != crc_received) {
+				printf("Thread %ld dev_fd CRC error, exit all\n", pthread_self());
+				exit(0);
+			}
+		}
+
+		// STEP 4: write to tcp_fd
+		if (s_type == TCP) {
+			memcpy(tcpbuf + 6, rtubuf, n - 2);
+			*((unsigned short *)(tcpbuf + 4)) = htons(n - 2);
+			nw = write(tcp_fd, tcpbuf, n - 2 + 6);
+#ifdef DEBUG
+			printf("Thread %ld write %d bytes to tcp_fd, return %d\n", pthread_self(),
+			       n - 2 + 6, nw);
+#endif
+		} else if (s_type == RTU) {
+			nw = write(tcp_fd, rtubuf, n);
+#ifdef DEBUG
+			printf("Thread %ld write %d bytes to tcp_fd, return %d\n", pthread_self(),
+			       n, nw);
+#endif
+		}
 	}
 }
 
@@ -321,7 +445,7 @@ int main(int argc, char *argv[])
 	socklen_t optlen = sizeof(optval);
 	int c;
 	strcpy(pname, "modbus-multiplexer");
-	while ((c = getopt(argc, argv, "n:s:rhd")) != EOF)
+	while ((c = getopt(argc, argv, "n:s:r:hd")) != EOF)
 		switch (c) {
 		case 'h':
 			usage();
@@ -371,19 +495,19 @@ int main(int argc, char *argv[])
 		printf("listen error\n");
 		exit(-1);
 	}
-	rtu_fd = tcp_connect(argv[optind + 1], argv[optind + 2]);
+	dev_fd = tcp_connect(argv[optind + 1], argv[optind + 2]);
 
-	setsockopt(rtu_fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);
+	setsockopt(dev_fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);
 	optval = 3;
-	setsockopt(rtu_fd, SOL_TCP, TCP_KEEPCNT, &optval, optlen);
+	setsockopt(dev_fd, SOL_TCP, TCP_KEEPCNT, &optval, optlen);
 	optval = 2;
-	setsockopt(rtu_fd, SOL_TCP, TCP_KEEPIDLE, &optval, optlen);
+	setsockopt(dev_fd, SOL_TCP, TCP_KEEPIDLE, &optval, optlen);
 	optval = 2;
-	setsockopt(rtu_fd, SOL_TCP, TCP_KEEPINTVL, &optval, optlen);
+	setsockopt(dev_fd, SOL_TCP, TCP_KEEPINTVL, &optval, optlen);
 
 	struct timeval timeout = { 3, 0 };	// 3秒 超时时间
-	setsockopt(rtu_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-	setsockopt(rtu_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+	setsockopt(dev_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+	setsockopt(dev_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
 	while (1) {
 		pthread_t thread_id;
