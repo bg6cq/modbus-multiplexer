@@ -2,7 +2,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
+#include <string.h>
+#include <ctype.h>
+#include <fcntl.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/ip.h>
@@ -13,8 +17,15 @@
 #include <assert.h>
 #include <pthread.h>
 #include <ctype.h>
-
-#include "sock.h"
+#include <syslog.h>
+#include <signal.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
+#include <netinet/tcp.h>
+#include <netdb.h>
 
 #define DEBUG 1
 #define MAXLEN 16384
@@ -23,9 +34,29 @@
 #define RTU 2
 
 int rtu_fd;
+int debug = 0;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 int s_type = 1;
 int r_type = 2;
+char pname[MAXLEN];
+
+void daemon_init(void)
+{
+	int i;
+	pid_t pid;
+	if ((pid = fork()) != 0)
+		exit(0);	/* parent terminates */
+	/* 41st child continues */
+	setsid();		/* become session leader */
+	signal(SIGHUP, SIG_IGN);
+	if ((pid = fork()) != 0)
+		exit(0);	/* 1st child terminates */
+	chdir("/");		/* change working directory */
+	umask(0);		/* clear our file mode creation mask */
+	for (i = 0; i < 3; i++)
+		close(i);
+	openlog(pname, LOG_PID, LOG_DAEMON);
+}
 
 /* Table of CRC values for high-order byte */
 static const uint8_t table_crc_hi[] = {
@@ -116,13 +147,13 @@ void *Process(void *ptr)
 #endif
 
 	optval = 1;
-	Setsockopt(tcp_fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);
+	setsockopt(tcp_fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);
 	optval = 3;
-	Setsockopt(tcp_fd, SOL_TCP, TCP_KEEPCNT, &optval, optlen);
+	setsockopt(tcp_fd, SOL_TCP, TCP_KEEPCNT, &optval, optlen);
 	optval = 2;
-	Setsockopt(tcp_fd, SOL_TCP, TCP_KEEPIDLE, &optval, optlen);
+	setsockopt(tcp_fd, SOL_TCP, TCP_KEEPIDLE, &optval, optlen);
 	optval = 2;
-	Setsockopt(tcp_fd, SOL_TCP, TCP_KEEPINTVL, &optval, optlen);
+	setsockopt(tcp_fd, SOL_TCP, TCP_KEEPINTVL, &optval, optlen);
 
 	struct timeval timeout = { 3, 0 };	// 3秒 超时时间
 	setsockopt(tcp_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
@@ -237,10 +268,45 @@ void *Process(void *ptr)
 	}
 }
 
+int tcp_connect(const char *host, const char *serv)
+{
+	int sockfd, n;
+	struct addrinfo hints, *res, *ressave;
+
+	bzero(&hints, sizeof(struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	if ((n = getaddrinfo(host, serv, &hints, &res)) != 0)
+		exit(0);
+	ressave = res;
+
+	do {
+		sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+		if (sockfd < 0)
+			continue;	/* ignore this one */
+
+		if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0)
+			break;	/* success */
+
+		close(sockfd);	/* ignore this one */
+	} while ((res = res->ai_next) != NULL);
+
+	if (res == NULL)	/* errno set from final connect() */
+		exit(0);
+
+	freeaddrinfo(ressave);
+
+	return (sockfd);
+}
+
 void usage()
 {
 	printf("\nmodbus-multiplexer v1.0 by james@ustc.edu.cn\n");
-	printf("modbus-multiplexer [ -s tcp | rtu ] [ -r tcp | rtu ] listen_port remote_ip remote_port\n\n");
+	printf
+	    ("modbus-multiplexer [ -s tcp | rtu ] [ -r tcp | rtu ] listen_port remote_ip remote_port\n\n");
+	printf("      -n name\n");
+	printf("      -d debug\n");
 	printf("      -s tcp_server type\n");
 	printf("      -r remote type\n");
 	printf("        tcp means modbustcp frame\n");
@@ -253,23 +319,67 @@ int main(int argc, char *argv[])
 	int lfd;
 	int optval;
 	socklen_t optlen = sizeof(optval);
-	signal(SIGCHLD, SIG_IGN);
-	if (argc != 4) {
+	int c;
+	strcpy(pname, "modbus-multiplexer");
+	while ((c = getopt(argc, argv, "n:s:rhd")) != EOF)
+		switch (c) {
+		case 'h':
+			usage();
+		case 's':
+			if (strcmp(optarg, "tcp") == 0)
+				s_type = TCP;
+			else if (strcmp(optarg, "rtu") == 0)
+				s_type = RTU;
+			else
+				printf("unknown s_type %s\n", optarg);
+			break;
+		case 'r':
+			if (strcmp(optarg, "tcp") == 0)
+				r_type = TCP;
+			else if (strcmp(optarg, "rtu") == 0)
+				r_type = RTU;
+			else
+				printf("unknown r_type %s\n", optarg);
+			break;
+		case 'n':
+			strncpy(pname, optarg, MAXLEN);
+			break;
+		case 'd':
+			debug = 1;
+			break;
+		}
+
+	if (argc - optind != 3) {
 		usage();
 		exit(0);
 	}
 	printf("starting\n");
-	lfd = Tcp_listen("0.0.0.0", argv[1], 0);
-	rtu_fd = Tcp_connect(argv[2], argv[3]);
 
 	optval = 1;
-	Setsockopt(rtu_fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);
+	lfd = socket(AF_INET, SOCK_STREAM, 0);
+	setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &optval, optlen);
+	setsockopt(lfd, IPPROTO_TCP, TCP_NODELAY, &optval, optlen);
+	struct sockaddr_in serv_addr;
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	serv_addr.sin_port = htons(atoi(argv[optind]));
+	if (bind(lfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+		printf("bind error\n");
+		exit(-1);
+	}
+	if (listen(lfd, 64) < 0) {
+		printf("listen error\n");
+		exit(-1);
+	}
+	rtu_fd = tcp_connect(argv[optind + 1], argv[optind + 2]);
+
+	setsockopt(rtu_fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);
 	optval = 3;
-	Setsockopt(rtu_fd, SOL_TCP, TCP_KEEPCNT, &optval, optlen);
+	setsockopt(rtu_fd, SOL_TCP, TCP_KEEPCNT, &optval, optlen);
 	optval = 2;
-	Setsockopt(rtu_fd, SOL_TCP, TCP_KEEPIDLE, &optval, optlen);
+	setsockopt(rtu_fd, SOL_TCP, TCP_KEEPIDLE, &optval, optlen);
 	optval = 2;
-	Setsockopt(rtu_fd, SOL_TCP, TCP_KEEPINTVL, &optval, optlen);
+	setsockopt(rtu_fd, SOL_TCP, TCP_KEEPINTVL, &optval, optlen);
 
 	struct timeval timeout = { 3, 0 };	// 3秒 超时时间
 	setsockopt(rtu_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
@@ -277,7 +387,7 @@ int main(int argc, char *argv[])
 
 	while (1) {
 		pthread_t thread_id;
-		int tcp_fd = Accept(lfd, NULL, NULL);
+		int tcp_fd = accept(lfd, NULL, NULL);
 		pthread_create(&thread_id, NULL, Process, &tcp_fd);
 	}
 	return (0);
