@@ -146,7 +146,7 @@ void *Process(void *ptr)
 	socklen_t optlen = sizeof(optval);
 
 	if (debug)
-		printf("Thread %ld start, tcp_fd=%d\n", pthread_self(), tcp_fd);
+		printf("Thread %ld start, tcp_fd:%d\n", pthread_self(), tcp_fd);
 
 	optval = 1;
 	setsockopt(tcp_fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);
@@ -179,23 +179,26 @@ void *Process(void *ptr)
 				break;
 			}
 			if (debug)
-				printf("Thread %ld read %d bytes from tcp_fd\n", pthread_self(), n);
+				printf("Thread %ld read %d bytes from tcp_fd:%d\n", pthread_self(),
+				       n, tcp_fd);
 			if (n != 6) {
 				if (debug)
 					printf
-					    ("Thread %ld read tcp_fd MBAP error, expect 6, get %d, errno=%d\n",
-					     pthread_self(), n, errno);
+					    ("Thread %ld read tcp_fd:%d MBAP error, expect 6, get %d, errno=%d\n",
+					     pthread_self(), tcp_fd, n, errno);
 				close(tcp_fd);
 				pthread_exit(NULL);
 			}
 			expected_len = htons(*((unsigned short *)(tcpbuf + 4)));
 			n = read(tcp_fd, rtubuf, expected_len);
 			if (debug)
-				printf("Thread %ld read %d bytes from tcp_fd\n", pthread_self(), n);
+				printf("Thread %ld read %d bytes from tcp_fd:%d\n", pthread_self(),
+				       n, tcp_fd);
 			if (n != expected_len) {
 				if (debug)
-					printf("Thread %ld read tcp_fd error, expect %d, get %d\n",
-					       pthread_self(), expected_len, n);
+					printf
+					    ("Thread %ld read tcp_fd:%d error, expect %d, get %d\n",
+					     pthread_self(), tcp_fd, expected_len, n);
 				close(tcp_fd);
 				pthread_exit(NULL);
 			}
@@ -215,12 +218,13 @@ void *Process(void *ptr)
 				break;
 			}
 			if (debug)
-				printf("Thread %ld read %d bytes from tcp_fd\n", pthread_self(), n);
+				printf("Thread %ld read %d bytes from tcp_fd:%d\n", pthread_self(),
+				       n, tcp_fd);
 			if (n != 8) {
 				if (debug)
 					printf
-					    ("Thread %ld read tcp_fd rtu header error, expect 8, get %d, errno=%d\n",
-					     pthread_self(), n, errno);
+					    ("Thread %ld read tcp_fd:%d rtu header error, expect 8, get %d, errno=%d\n",
+					     pthread_self(), tcp_fd, n, errno);
 				close(tcp_fd);
 				pthread_exit(NULL);
 			}
@@ -248,13 +252,13 @@ void *Process(void *ptr)
 			if (packet_len > 8) {	// need read more
 				n = read(tcp_fd, rtubuf + 8, packet_len - 8);
 				if (debug)
-					printf("Thread %ld read %d bytes from tcp_fd\n",
-					       pthread_self(), n);
+					printf("Thread %ld read %d bytes from tcp_fd:%d\n",
+					       pthread_self(), n, tcp_fd);
 				if (n != packet_len - 8) {
 					if (debug)
 						printf
-						    ("Thread %ld read tcp_fd error, expect %d, get %d\n",
-						     pthread_self(), packet_len - 8, n);
+						    ("Thread %ld read tcp_fd:%d error, expect %d, get %d\n",
+						     pthread_self(), tcp_fd, packet_len - 8, n);
 					close(tcp_fd);
 					pthread_exit(NULL);
 				}
@@ -266,9 +270,9 @@ void *Process(void *ptr)
 			if ((rtubuf[n - 2] != (crc >> 8)) || (rtubuf[n - 1] != (crc & 0x00FF))) {
 				if (debug)
 					printf
-					    ("Thread %ld read tcp_fd CRC error, expect %02X%02X, get %02X%02X\n",
-					     pthread_self(), crc >> 8, crc & 0xff, rtubuf[n - 2],
-					     rtubuf[n - 1]);
+					    ("Thread %ld read tcp_fd:%d CRC error, expect %02X%02X, get %02X%02X\n",
+					     pthread_self(), tcp_fd, crc >> 8, crc & 0xff,
+					     rtubuf[n - 2], rtubuf[n - 1]);
 				close(tcp_fd);
 				pthread_exit(NULL);
 			};
@@ -286,31 +290,34 @@ void *Process(void *ptr)
 		} else if (r_type == RTU)
 			nw = write(dev_fd, rtubuf, n);
 		if (debug)
-			printf("Thread %ld write %d bytes to dev_fd, return %d\n",
-			       pthread_self(), n, nw);
+			printf("Thread %ld write %d bytes to dev_fd:%d, return %d\n",
+			       pthread_self(), n, dev_fd, nw);
 
 		// STEP 3: read from dev_fd
 		if (r_type == TCP) {
 			n = read(dev_fd, tcpbuf, 6);
 			if (debug)
-				printf("Thread %ld read %d bytes from dev_fd\n", pthread_self(), n);
+				printf("Thread %ld read %d bytes from dev_fd:%d\n", pthread_self(),
+				       n, dev_fd);
 			if (n != 6) {
 				if (debug)
 					printf
-					    ("Thread %ld read dev_fd MBAP error, expect 6, get %d, errno=%d\n",
-					     pthread_self(), n, errno);
+					    ("Thread %ld read dev_fd:%d MBAP error, expect 6, get %d, errno=%d\n",
+					     pthread_self(), dev_fd, n, errno);
 				exit(0);
 			}
 			expected_len = htons(*((unsigned short *)(tcpbuf + 4)));
 			n = read(dev_fd, rtubuf, expected_len);
 			if (debug)
-				printf("Thread %ld read %d bytes from dev_fd\n", pthread_self(), n);
+				printf("Thread %ld read %d bytes from dev_fd:%d\n", pthread_self(),
+				       n, dev_fd);
 			pthread_mutex_unlock(&mutex);
 
 			if (n != expected_len) {
 				if (debug)
-					printf("Thread %ld read dev_fd error, expect %d, get %d\n",
-					       pthread_self(), expected_len, n);
+					printf
+					    ("Thread %ld read dev_fd:%d error, expect %d, get %d\n",
+					     pthread_self(), dev_fd, expected_len, n);
 				exit(0);
 			}
 
@@ -328,12 +335,13 @@ void *Process(void *ptr)
 				break;
 			}
 			if (debug)
-				printf("Thread %ld read %d bytes from dev_fd\n", pthread_self(), n);
+				printf("Thread %ld read %d bytes from dev_fd:%d\n", pthread_self(),
+				       n, dev_fd);
 			if (n != 3) {
 				if (debug)
 					printf
-					    ("Thread %ld read dev_fd rtu header error, expect 3, get %d, errno=%d\n",
-					     pthread_self(), n, errno);
+					    ("Thread %ld read dev_fd:%d rtu header error, expect 3, get %d, errno=%d\n",
+					     pthread_self(), dev_fd, n, errno);
 				exit(0);
 			}
 			// expcted_len is the full packet len
@@ -359,15 +367,16 @@ void *Process(void *ptr)
 
 			n = read(dev_fd, rtubuf + 3, expected_len - 3);
 			if (debug)
-				printf("Thread %ld read %d bytes from dev_fd\n", pthread_self(), n);
+				printf("Thread %ld read %d bytes from dev_fd:%d\n", pthread_self(),
+				       n, dev_fd);
 
 			pthread_mutex_unlock(&mutex);
 
 			if (n != expected_len - 3) {
 				if (debug)
 					printf
-					    ("Thread %ld read dev_fd error, expect %d, get %d, exit all\n",
-					     pthread_self(), expected_len - 3, n);
+					    ("Thread %ld read dev_fd:%d error, expect %d, get %d, exit all\n",
+					     pthread_self(), dev_fd, expected_len - 3, n);
 				exit(0);
 			}
 			n = expected_len;
@@ -377,8 +386,8 @@ void *Process(void *ptr)
 			crc_received = (rtubuf[n - 2] << 8) | rtubuf[n - 1];
 			if (crc_calculated != crc_received) {
 				if (debug)
-					printf("Thread %ld dev_fd CRC error, exit all\n",
-					       pthread_self());
+					printf("Thread %ld dev_fd:%d CRC error, exit all\n",
+					       pthread_self(), dev_fd);
 				exit(0);
 			}
 		}
@@ -390,8 +399,8 @@ void *Process(void *ptr)
 		} else if (s_type == RTU)
 			nw = write(tcp_fd, rtubuf, n);
 		if (debug)
-			printf("Thread %ld write %d bytes to tcp_fd, return %d\n",
-			       pthread_self(), n, nw);
+			printf("Thread %ld write %d bytes to tcp_fd:%d, return %d\n",
+			       pthread_self(), tcp_fd, n, nw);
 	}
 }
 
