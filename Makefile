@@ -1,6 +1,6 @@
 all: modbus-multiplexer
 
-modbus-multiplexer: modbus-multiplexer.c sock.h
+modbus-multiplexer: modbus-multiplexer.c
 	gcc -o modbus-multiplexer -Wall -g modbus-multiplexer.c -lpthread
 
 
