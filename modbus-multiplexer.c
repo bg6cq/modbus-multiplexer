@@ -29,6 +29,7 @@
 #include <sys/wait.h>
 
 #define MAXLEN 16384
+#define MAXRTULEN 256
 
 #define TCP 1
 #define RTU 2
@@ -168,7 +169,9 @@ void *Process(void *ptr)
 		tcpbuf[2] = 0;
 		tcpbuf[3] = 0;
 
-		// STEP 1: read from tcp_fd to rtubuf
+		//===========================================
+		// STEP 1: read request from tcp_fd to rtubuf
+		//===========================================
 		if (s_type == TCP) {
 			while (1) {
 				n = read(tcp_fd, tcpbuf, 6);
@@ -190,6 +193,13 @@ void *Process(void *ptr)
 				pthread_exit(NULL);
 			}
 			expected_len = htons(*((unsigned short *)(tcpbuf + 4)));
+			if (expected_len > MAXRTULEN - 2) {
+				if (debug)
+					printf("Thread %ld expected_len %d too large tcp_fd:%d\n",
+					       pthread_self(), expected_len, tcp_fd);
+				close(tcp_fd);
+				pthread_exit(NULL);
+			}
 			n = read(tcp_fd, rtubuf, expected_len);
 			if (debug)
 				printf("Thread %ld read %d bytes from tcp_fd:%d\n", pthread_self(),
@@ -280,9 +290,13 @@ void *Process(void *ptr)
 
 		pthread_mutex_lock(&mutex);
 
+		//
 		// now,  data read from s_socket in rtubuf, len is n
+		//
 
-		// STEP 2: write to dev_fd
+		//===============================
+		// STEP 2: write request to dev_fd
+		//===============================
 		if (r_type == TCP) {
 			*((unsigned short *)(tcpbuf + 4)) = htons(n - 2);
 			memcpy(tcpbuf + 6, rtubuf, n - 2);
@@ -293,7 +307,9 @@ void *Process(void *ptr)
 			printf("Thread %ld write %d bytes to dev_fd:%d, return %d\n",
 			       pthread_self(), n, dev_fd, nw);
 
-		// STEP 3: read from dev_fd
+		//==================================
+		// STEP 3: read response from dev_fd
+		//==================================
 		if (r_type == TCP) {
 			n = read(dev_fd, tcpbuf, 6);
 			if (debug)
@@ -307,6 +323,13 @@ void *Process(void *ptr)
 				exit(0);
 			}
 			expected_len = htons(*((unsigned short *)(tcpbuf + 4)));
+			if (expected_len > MAXRTULEN - 2) {
+				if (debug)
+					printf("Thread %ld expected_len %d too large dev_fd:%d\n",
+					       pthread_self(), expected_len, dev_fd);
+				close(tcp_fd);
+				pthread_exit(NULL);
+			}
 			n = read(dev_fd, rtubuf, expected_len);
 			if (debug)
 				printf("Thread %ld read %d bytes from dev_fd:%d\n", pthread_self(),
@@ -358,6 +381,16 @@ void *Process(void *ptr)
 			case 16:	//Write holdings
 				expected_len = 8;
 				break;
+			case 0x81:	// Exception
+			case 0x82:
+			case 0x83:
+			case 0x84:
+			case 0x85:
+			case 0x86:
+			case 0x8f:
+			case 0x90:
+				expected_len = 5;
+				break;
 			default:
 				if (debug)
 					printf("Thread %ld unsupported function code: %d\n",
@@ -391,7 +424,9 @@ void *Process(void *ptr)
 				exit(0);
 			}
 		}
-		// STEP 4: write to tcp_fd
+		//=================================
+		// STEP 4: write response to tcp_fd
+		//=================================
 		if (s_type == TCP) {
 			memcpy(tcpbuf + 6, rtubuf, n - 2);
 			*((unsigned short *)(tcpbuf + 4)) = htons(n - 2);
