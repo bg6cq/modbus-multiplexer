@@ -200,6 +200,9 @@ void *Process(void *ptr)
 				close(tcp_fd);
 				pthread_exit(NULL);
 			}
+			if (debug)
+				printf("Thread %ld expected_len %d from tcp_fd:%d\n",
+				       pthread_self(), expected_len, tcp_fd);
 			n = read(tcp_fd, rtubuf, expected_len);
 			if (debug)
 				printf("Thread %ld read %d bytes from tcp_fd:%d\n", pthread_self(),
@@ -348,14 +351,7 @@ void *Process(void *ptr)
 			rtubuf[n + 1] = crc & 0x00FF;
 			n = n + 2;
 		} else if (r_type == RTU) {
-			while (1) {
-				n = read(dev_fd, rtubuf, 3);
-				if (n >= 0)
-					break;
-				if ((errno == EAGAIN) || (errno == EINTR))
-					continue;
-				break;
-			}
+			n = read(dev_fd, rtubuf, 3);
 			if (debug)
 				printf("Thread %ld read %d bytes from dev_fd:%d\n", pthread_self(),
 				       n, dev_fd);
