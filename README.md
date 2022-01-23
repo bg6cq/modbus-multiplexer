@@ -18,3 +18,4 @@ listen at listen port, support multi client connect, send modbus packet to remot
 
 在local_port接收TCP连接，通信使用modbus tcp/rtu 协议，转发到 remote_ip 的 remote_port，通信使用modbus tcp/rtu协议。
 
+![连接示意图](img/diag.png)
