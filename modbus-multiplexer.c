@@ -327,8 +327,7 @@ void *Process(void *ptr)
 				if (debug)
 					printf("Thread %ld expected_len %d too large dev_fd:%d\n",
 					       pthread_self(), expected_len, dev_fd);
-				close(tcp_fd);
-				pthread_exit(NULL);
+				exit(0);
 			}
 			n = read(dev_fd, rtubuf, expected_len);
 			if (debug)
