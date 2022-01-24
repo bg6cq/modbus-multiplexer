@@ -318,6 +318,12 @@ void *Process(void *ptr)
 			if (debug)
 				printf("Thread %ld read %d bytes from dev_fd:%d\n", pthread_self(),
 				       n, dev_fd);
+			if ((n == -1) && (errno == EAGAIN)) {
+				pthread_mutex_unlock(&mutex);
+				printf("Thread %ld read timeout dev_fd:%d\n", pthread_self(),
+				       dev_fd);
+				continue;
+			}
 			if (n != 6) {
 				if (debug)
 					printf
@@ -355,6 +361,12 @@ void *Process(void *ptr)
 			if (debug)
 				printf("Thread %ld read %d bytes from dev_fd:%d\n", pthread_self(),
 				       n, dev_fd);
+			if ((n == -1) && (errno == EAGAIN)) {
+				pthread_mutex_unlock(&mutex);
+				printf("Thread %ld read timeout dev_fd:%d\n", pthread_self(),
+				       dev_fd);
+				continue;
+			}
 			if (n != 3) {
 				if (debug)
 					printf
