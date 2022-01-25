@@ -148,6 +148,7 @@ void *Process(void *ptr)
 
 	if (debug)
 		printf("%s T:%ld start, tcp_fd:%d\n", pname, pthread_self(), tcp_fd);
+	pthread_detach(pthread_self());
 
 	optval = 1;
 	setsockopt(tcp_fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);
