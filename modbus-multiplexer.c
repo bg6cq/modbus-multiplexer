@@ -447,7 +447,7 @@ void *Process(void *ptr)
 			nw = write(tcp_fd, tcpbuf, n - 2 + 6);
 			if (debug)
 				printf("%s T:%ld write %d bytes to tcp_fd:%d, return %d\n",
-				       pname, pthread_self(), tcp_fd - 2 + 6, n, nw);
+				       pname, pthread_self(), n - 2 + 6, tcp_fd, nw);
 		} else if (s_type == RTU) {
 			nw = write(tcp_fd, rtubuf, n);
 			if (debug)
