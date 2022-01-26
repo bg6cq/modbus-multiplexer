@@ -155,6 +155,7 @@ void *Process(void *ptr)
 	uint8_t tcpbuf[MAXLEN];
 	uint8_t rtubuf[MAXLEN];
 	char strbuf[MAXLEN];
+	uint16_t transid = 0;
 	int optval;
 	socklen_t optlen = sizeof(optval);
 
@@ -318,6 +319,10 @@ void *Process(void *ptr)
 		// STEP 2: write request to dev_fd
 		//===============================
 		if (r_type == TCP) {
+			if (s_type == RTU) {	// we will add transid
+				*((uint16_t *) (tcpbuf)) = htons(transid);
+				transid++;
+			}
 			*((unsigned short *)(tcpbuf + 4)) = htons(n - 2);
 			memcpy(tcpbuf + 6, rtubuf, n - 2);
 			nw = write(dev_fd, tcpbuf, n - 2 + 6);
@@ -334,6 +339,8 @@ void *Process(void *ptr)
 		// STEP 3: read response from dev_fd
 		//==================================
 		if (r_type == TCP) {
+			uint8_t saved_transid[2];
+			memcpy(saved_transid, tcpbuf, 2);
 			n = read(dev_fd, tcpbuf, 8);
 			if ((n == -1) && (errno == EAGAIN)) {
 				pthread_mutex_unlock(&mutex);
@@ -356,6 +363,14 @@ void *Process(void *ptr)
 			if (debug)
 				printf("%s T:%ld read %d bytes from dev_fd:%d tcp %s\n", pname,
 				       pthread_self(), n, dev_fd, dump_pkt(strbuf, tcpbuf, TCP));
+			if (memcmp(saved_transid, tcpbuf, 2) != 0) {
+				if (debug)
+					printf
+					    ("%s T:%ld read transid %02X%02X != send %02X%02X dev_fd:%d tcp, exit all\n",
+					     pname, pthread_self(), tcpbuf[0], tcpbuf[1],
+					     saved_transid[0], saved_transid[1], dev_fd);
+				exit(0);
+			}
 			expected_len = htons(*((unsigned short *)(tcpbuf + 4)));
 			if (expected_len > MAXRTULEN - 2) {
 				if (debug)
