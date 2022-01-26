@@ -468,8 +468,11 @@ void *Process(void *ptr)
 			crc_received = (rtubuf[n - 2] << 8) | rtubuf[n - 1];
 			if (crc_calculated != crc_received) {
 				if (debug)
-					printf("%s T:%ld dev_fd:%d CRC error, exit all\n",
-					       pname, pthread_self(), dev_fd);
+					printf
+					    ("%s T:%ld dev_fd:%d CRC error %02X%02X should be %02X%02X, exit all\n",
+					     pname, pthread_self(), dev_fd, rtubuf[n - 2],
+					     rtubuf[n - 1], crc_calculated >> 8,
+					     crc_calculated & 0xff);
 				exit(0);
 			}
 		}
