@@ -36,6 +36,7 @@
 
 int dev_fd;
 int debug = 0;
+int timeout_exit = 0;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 int s_type = 1;
 int r_type = 2;
@@ -327,6 +328,11 @@ void *Process(void *ptr)
 				       pthread_self(), n, dev_fd);
 			if ((n == -1) && (errno == EAGAIN)) {
 				pthread_mutex_unlock(&mutex);
+				if (timeout_exit) {
+					printf("%s T:%ld read timeout dev_fd:%d tcp, exit all\n",
+					       pname, pthread_self(), dev_fd);
+					exit(0);
+				}
 				printf("%s T:%ld read timeout dev_fd:%d tcp, continue\n", pname,
 				       pthread_self(), dev_fd);
 				continue;
@@ -494,9 +500,10 @@ void usage()
 {
 	printf("\nmodbus-multiplexer v1.0 by james@ustc.edu.cn\n");
 	printf
-	    ("modbus-multiplexer [ -s tcp | rtu ] [ -r tcp | rtu ] listen_port remote_ip remote_port\n\n");
+	    ("modbus-multiplexer [ -s tcp | rtu ] [ -r tcp | rtu ] [ -e ] listen_port remote_ip remote_port\n\n");
 	printf("      -n name\n");
 	printf("      -d debug\n");
+	printf("      -e when read from remote time out, exit all (default is continue)\n");
 	printf("      -s tcp_server type\n");
 	printf("      -r remote type\n");
 	printf("        tcp means modbustcp frame\n");
@@ -533,6 +540,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'n':
 			strncpy(pname, optarg, MAXLEN);
+			break;
+		case 'e':
+			timeout_exit = 1;
 			break;
 		case 'd':
 			debug = 1;
