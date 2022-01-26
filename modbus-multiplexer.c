@@ -518,7 +518,7 @@ int main(int argc, char *argv[])
 	socklen_t optlen = sizeof(optval);
 	int c;
 	strcpy(pname, "modbus-multiplexer");
-	while ((c = getopt(argc, argv, "n:s:r:hd")) != EOF)
+	while ((c = getopt(argc, argv, "n:s:r:hed")) != EOF)
 		switch (c) {
 		case 'h':
 			usage();
