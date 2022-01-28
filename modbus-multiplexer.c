@@ -204,8 +204,9 @@ void *Process(void *ptr)
 				pthread_exit(NULL);
 			}
 			if (debug)
-				printf("%s T:%ld read %d bytes from tcp_fd:%d tcp %s\n", pname,
-				       pthread_self(), n, tcp_fd, dump_pkt(strbuf, tcpbuf, TCP));
+				printf("%s T:%ld read %d bytes from tcp_fd:%d tcp START %s\n",
+				       pname, pthread_self(), n, tcp_fd, dump_pkt(strbuf, tcpbuf,
+										  TCP));
 			expected_len = htons(*((unsigned short *)(tcpbuf + 4)));
 			if (expected_len > MAXRTULEN - 2) {
 				if (debug)
@@ -255,8 +256,9 @@ void *Process(void *ptr)
 				pthread_exit(NULL);
 			}
 			if (debug)
-				printf("%s T:%ld read %d bytes from tcp_fd:%d rtu %s\n", pname,
-				       pthread_self(), n, tcp_fd, dump_pkt(strbuf, rtubuf, RTU));
+				printf("%s T:%ld read %d bytes from tcp_fd:%d rtu START %s\n",
+				       pname, pthread_self(), n, tcp_fd, dump_pkt(strbuf, rtubuf,
+										  RTU));
 			// expcted_len is the full packet len
 			switch (rtubuf[1]) {	//Function code
 			case 1:	//Read coils
@@ -345,12 +347,15 @@ void *Process(void *ptr)
 			if ((n == -1) && (errno == EAGAIN)) {
 				pthread_mutex_unlock(&mutex);
 				if (timeout_exit) {
-					printf("%s T:%ld read timeout dev_fd:%d tcp, exit all\n",
-					       pname, pthread_self(), dev_fd);
+					if (debug)
+						printf
+						    ("%s T:%ld read timeout dev_fd:%d tcp, exit all\n",
+						     pname, pthread_self(), dev_fd);
 					exit(0);
 				}
-				printf("%s T:%ld read timeout dev_fd:%d tcp, continue\n", pname,
-				       pthread_self(), dev_fd);
+				if (debug)
+					printf("%s T:%ld read timeout dev_fd:%d tcp, continue\n",
+					       pname, pthread_self(), dev_fd);
 				continue;
 			}
 			if (n != 8) {
@@ -402,8 +407,9 @@ void *Process(void *ptr)
 			n = read(dev_fd, rtubuf, 3);
 			if ((n == -1) && (errno == EAGAIN)) {
 				pthread_mutex_unlock(&mutex);
-				printf("%s T:%ld read timeout dev_fd:%d rtu, continue\n", pname,
-				       pthread_self(), dev_fd);
+				if (debug)
+					printf("%s T:%ld read timeout dev_fd:%d rtu, continue\n",
+					       pname, pthread_self(), dev_fd);
 				continue;
 			}
 			if (n != 3) {
@@ -484,12 +490,12 @@ void *Process(void *ptr)
 			*((unsigned short *)(tcpbuf + 4)) = htons(n - 2);
 			nw = write(tcp_fd, tcpbuf, n - 2 + 6);
 			if (debug)
-				printf("%s T:%ld write %d bytes to tcp_fd:%d, return %d\n",
+				printf("%s T:%ld write %d bytes to tcp_fd:%d, return %d END\n",
 				       pname, pthread_self(), n - 2 + 6, tcp_fd, nw);
 		} else if (s_type == RTU) {
 			nw = write(tcp_fd, rtubuf, n);
 			if (debug)
-				printf("%s T:%ld write %d bytes to tcp_fd:%d, return %d\n",
+				printf("%s T:%ld write %d bytes to tcp_fd:%d, return %d END\n",
 				       pname, pthread_self(), tcp_fd, n, nw);
 		}
 	}
