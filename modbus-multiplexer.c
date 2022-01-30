@@ -182,6 +182,7 @@ void *Process(void *ptr)
 	pthread_detach(pthread_self());
 
 	optval = 1;
+	setsockopt(tcp_fd, IPPROTO_TCP, TCP_NODELAY, &optval, optlen);
 	setsockopt(tcp_fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);
 	optval = 3;
 	setsockopt(tcp_fd, SOL_TCP, TCP_KEEPCNT, &optval, optlen);
@@ -593,7 +594,6 @@ int main(int argc, char *argv[])
 	optval = 1;
 	lfd = socket(AF_INET, SOCK_STREAM, 0);
 	setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &optval, optlen);
-	setsockopt(lfd, IPPROTO_TCP, TCP_NODELAY, &optval, optlen);
 	struct sockaddr_in serv_addr;
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -608,6 +608,8 @@ int main(int argc, char *argv[])
 	}
 	dev_fd = tcp_connect(argv[optind + 1], argv[optind + 2]);
 
+	optval = 1;
+	setsockopt(dev_fd, IPPROTO_TCP, TCP_NODELAY, &optval, optlen);
 	setsockopt(dev_fd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen);
 	optval = 3;
 	setsockopt(dev_fd, SOL_TCP, TCP_KEEPCNT, &optval, optlen);
