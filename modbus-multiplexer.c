@@ -37,7 +37,7 @@
 
 int dev_fd;
 int debug = 0;
-int timeout_exit = 0;
+int timeout_retry_exit = 10;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 int s_type = 1;
 int r_type = 2;
@@ -346,11 +346,12 @@ void *Process(void *ptr)
 			n = read(dev_fd, tcpbuf, 8);
 			if ((n == -1) && (errno == EAGAIN)) {
 				pthread_mutex_unlock(&mutex);
-				if (timeout_exit) {
+				if (timeout_retry_exit <= 0) {
 					Log("%s T:%ld read timeout dev_fd:%d tcp, exit all\n",
 					    pname, pthread_self(), dev_fd);
 					exit(0);
 				}
+				timeout_retry_exit--;
 				Log("%s T:%ld read timeout dev_fd:%d tcp, continue\n",
 				    pname, pthread_self(), dev_fd);
 				continue;
@@ -394,11 +395,12 @@ void *Process(void *ptr)
 			n = read(dev_fd, rtubuf, 3);
 			if ((n == -1) && (errno == EAGAIN)) {
 				pthread_mutex_unlock(&mutex);
-				if (timeout_exit) {
+				if (timeout_retry_exit <= 0) {
 					Log("%s T:%ld read timeout dev_fd:%d rtu, exit all\n",
 					    pname, pthread_self(), dev_fd);
 					exit(0);
 				}
+				timeout_retry_exit--;
 				if (debug)
 					Log("%s T:%ld read timeout dev_fd:%d rtu, continue\n",
 					    pname, pthread_self(), dev_fd);
@@ -518,10 +520,10 @@ int tcp_connect(const char *host, const char *serv)
 void usage()
 {
 	Log("\nmodbus-multiplexer v1.0 by james@ustc.edu.cn\n");
-	Log("modbus-multiplexer [ -s tcp | rtu ] [ -r tcp | rtu ] [ -e ] listen_port remote_ip remote_port\n\n");
+	Log("modbus-multiplexer [ -s tcp | rtu ] [ -r tcp | rtu ] [ -e time_out_retry ] listen_port remote_ip remote_port\n\n");
 	Log("      -n name\n");
 	Log("      -d debug\n");
-	Log("      -e when read from remote time out, exit all (default is continue)\n");
+	Log("      -e time out retry count before exit all (default is 10)\n");
 	Log("      -s tcp_server type\n");
 	Log("      -r remote type\n");
 	Log("        tcp means modbustcp frame\n");
@@ -536,7 +538,7 @@ int main(int argc, char *argv[])
 	socklen_t optlen = sizeof(optval);
 	int c;
 	strcpy(pname, "modbus-multiplexer");
-	while ((c = getopt(argc, argv, "n:s:r:hed")) != EOF)
+	while ((c = getopt(argc, argv, "n:s:r:he:d")) != EOF)
 		switch (c) {
 		case 'h':
 			usage();
@@ -560,7 +562,9 @@ int main(int argc, char *argv[])
 			strncpy(pname, optarg, MAXLEN);
 			break;
 		case 'e':
-			timeout_exit = 1;
+			timeout_retry_exit = atoi(optarg);
+			if ((timeout_retry_exit <= 0) || (timeout_retry_exit >= 100))
+				timeout_retry_exit = 10;
 			break;
 		case 'd':
 			debug = 1;
