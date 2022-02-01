@@ -38,6 +38,7 @@
 int dev_fd;
 int debug = 0;
 int timeout_retry_exit = 10;
+int time_out = 3;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 int s_type = 1;
 int r_type = 2;
@@ -191,7 +192,7 @@ void *Process(void *ptr)
 	optval = 2;
 	setsockopt(tcp_fd, SOL_TCP, TCP_KEEPINTVL, &optval, optlen);
 
-	struct timeval timeout = { 3, 0 };	// 3秒 超时时间
+	struct timeval timeout = { time_out, 0 };	// time_out 秒 超时时间
 	setsockopt(tcp_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 	setsockopt(tcp_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
@@ -518,10 +519,11 @@ void usage()
 {
 	printf("\nmodbus-multiplexer v1.0 by james@ustc.edu.cn\n");
 	printf
-	    ("modbus-multiplexer [ -s tcp | rtu ] [ -r tcp | rtu ] [ -e time_out_retry ] listen_port remote_ip remote_port\n\n");
+	    ("modbus-multiplexer [ -s tcp | rtu ] [ -r tcp | rtu ] [ -e time_out_retry ] [ -t time_out ] listen_port remote_ip remote_port\n\n");
 	printf("      -n name\n");
 	printf("      -d debug\n");
 	printf("      -e time out retry count before exit all (default is 10)\n");
+	printf("      -t time out (1-100, default is 3)\n");
 	printf("      -s tcp_server type\n");
 	printf("      -r remote type\n");
 	printf("        tcp means modbustcp frame\n");
@@ -536,7 +538,7 @@ int main(int argc, char *argv[])
 	socklen_t optlen = sizeof(optval);
 	int c;
 	strcpy(pname, "modbus-multiplexer");
-	while ((c = getopt(argc, argv, "n:s:r:he:d")) != EOF)
+	while ((c = getopt(argc, argv, "n:s:r:he:t:d")) != EOF)
 		switch (c) {
 		case 'h':
 			usage();
@@ -563,6 +565,11 @@ int main(int argc, char *argv[])
 			timeout_retry_exit = atoi(optarg);
 			if ((timeout_retry_exit <= 0) || (timeout_retry_exit >= 100))
 				timeout_retry_exit = 10;
+			break;
+		case 't':
+			time_out = atoi(optarg);
+			if ((time_out <= 0) || (time_out >= 100))
+				time_out = 3;
 			break;
 		case 'd':
 			debug = 1;
@@ -620,7 +627,7 @@ int main(int argc, char *argv[])
 	optval = 2;
 	setsockopt(dev_fd, SOL_TCP, TCP_KEEPINTVL, &optval, optlen);
 
-	struct timeval timeout = { 3, 0 };	// 3秒 超时时间
+	struct timeval timeout = { time_out, 0 };	// time_out 秒 超时时间
 	setsockopt(dev_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 	setsockopt(dev_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
