@@ -352,8 +352,7 @@ void *Process(void *ptr)
 					exit(0);
 				}
 				timeout_retry_exit--;
-				Log("%s T:%ld read timeout dev_fd:%d tcp, continue\n",
-				    pname, pthread_self(), dev_fd);
+				Log("%s T:%ld read timeout dev_fd:%d tcp, timeout_retry: %d continue\n", pname, pthread_self(), dev_fd, timeout_retry_exit);
 				continue;
 			}
 			if (n != 8) {
@@ -401,9 +400,7 @@ void *Process(void *ptr)
 					exit(0);
 				}
 				timeout_retry_exit--;
-				if (debug)
-					Log("%s T:%ld read timeout dev_fd:%d rtu, continue\n",
-					    pname, pthread_self(), dev_fd);
+				Log("%s T:%ld read timeout dev_fd:%d rtu, timeout_retry:%d continue\n", pname, pthread_self(), dev_fd, timeout_retry_exit);
 				continue;
 			}
 			if (n != 3) {
@@ -519,15 +516,16 @@ int tcp_connect(const char *host, const char *serv)
 
 void usage()
 {
-	Log("\nmodbus-multiplexer v1.0 by james@ustc.edu.cn\n");
-	Log("modbus-multiplexer [ -s tcp | rtu ] [ -r tcp | rtu ] [ -e time_out_retry ] listen_port remote_ip remote_port\n\n");
-	Log("      -n name\n");
-	Log("      -d debug\n");
-	Log("      -e time out retry count before exit all (default is 10)\n");
-	Log("      -s tcp_server type\n");
-	Log("      -r remote type\n");
-	Log("        tcp means modbustcp frame\n");
-	Log("        rtu means modbus rtu over tcp frame\n");
+	printf("\nmodbus-multiplexer v1.0 by james@ustc.edu.cn\n");
+	printf
+	    ("modbus-multiplexer [ -s tcp | rtu ] [ -r tcp | rtu ] [ -e time_out_retry ] listen_port remote_ip remote_port\n\n");
+	printf("      -n name\n");
+	printf("      -d debug\n");
+	printf("      -e time out retry count before exit all (default is 10)\n");
+	printf("      -s tcp_server type\n");
+	printf("      -r remote type\n");
+	printf("        tcp means modbustcp frame\n");
+	printf("        rtu means modbus rtu over tcp frame\n");
 	exit(0);
 }
 
@@ -548,7 +546,7 @@ int main(int argc, char *argv[])
 			else if (strcmp(optarg, "rtu") == 0)
 				s_type = RTU;
 			else
-				Log("unknown s_type %s\n", optarg);
+				printf("unknown s_type %s\n", optarg);
 			break;
 		case 'r':
 			if (strcmp(optarg, "tcp") == 0)
@@ -556,7 +554,7 @@ int main(int argc, char *argv[])
 			else if (strcmp(optarg, "rtu") == 0)
 				r_type = RTU;
 			else
-				Log("unknown r_type %s\n", optarg);
+				printf("unknown r_type %s\n", optarg);
 			break;
 		case 'n':
 			strncpy(pname, optarg, MAXLEN);
@@ -575,7 +573,7 @@ int main(int argc, char *argv[])
 		usage();
 		exit(0);
 	}
-	Log("%s starting\n", pname);
+	printf("%s starting\n", pname);
 
 	if (debug != 1) {
 		daemon_init();
@@ -603,11 +601,11 @@ int main(int argc, char *argv[])
 	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	serv_addr.sin_port = htons(atoi(argv[optind]));
 	if (bind(lfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-		Log("%s bind error\n", pname);
+		Log("%s bind error, exit\n", pname);
 		exit(-1);
 	}
 	if (listen(lfd, 64) < 0) {
-		Log("%s listen error\n", pname);
+		Log("%s listen error, exit\n", pname);
 		exit(-1);
 	}
 	dev_fd = tcp_connect(argv[optind + 1], argv[optind + 2]);
