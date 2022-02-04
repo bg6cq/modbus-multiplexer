@@ -343,21 +343,22 @@ void *Process(void *ptr)
 		//==================================
 		if (r_type == TCP) {
 			uint8_t saved_transid[2];
+			uint8_t slaveid;
+			slaveid = tcpbuf[7];
 			memcpy(saved_transid, tcpbuf, 2);
 			n = read(dev_fd, tcpbuf, 8);
 			if ((n == -1) && (errno == EAGAIN)) {
 				pthread_mutex_unlock(&mutex);
 				if (timeout_retry_exit <= 0) {
-					Log("%s T:%ld read timeout dev_fd:%d tcp, exit all\n",
-					    pname, pthread_self(), dev_fd);
+					Log("%s T:%ld read timeout dev_fd:%d tcp slaveid:%d, exit all\n", pname, pthread_self(), dev_fd, slaveid);
 					exit(0);
 				}
 				timeout_retry_exit--;
-				Log("%s T:%ld read timeout dev_fd:%d tcp, timeout_retry: %d continue\n", pname, pthread_self(), dev_fd, timeout_retry_exit);
+				Log("%s T:%ld read timeout dev_fd:%d tcp slaveid:%d, timeout_retry: %d continue\n", pname, pthread_self(), dev_fd, slaveid, timeout_retry_exit);
 				continue;
 			}
 			if (n != 8) {
-				Log("%s T:%ld read dev_fd:%d MBAP error, expect 8, get %d, errno=%d, exit all\n", pname, pthread_self(), dev_fd, n, errno);
+				Log("%s T:%ld read dev_fd:%d slaveid:%d MBAP error, expect 8, get %d, errno=%d, exit all\n", pname, pthread_self(), dev_fd, slaveid, n, errno);
 				exit(0);
 			}
 			if (debug)
@@ -365,7 +366,7 @@ void *Process(void *ptr)
 				    pname, pthread_self(), n, dev_fd, dump_pkt(strbuf, tcpbuf,
 									       TCP));
 			if (memcmp(saved_transid, tcpbuf, 2) != 0) {
-				Log("%s T:%ld read transid %02X%02X != send %02X%02X dev_fd:%d tcp, exit all\n", pname, pthread_self(), tcpbuf[0], tcpbuf[1], saved_transid[0], saved_transid[1], dev_fd);
+				Log("%s T:%ld read transid %02X%02X != send %02X%02X dev_fd:%d tcp slaveid:%d, exit all\n", pname, pthread_self(), tcpbuf[0], tcpbuf[1], saved_transid[0], saved_transid[1], dev_fd, slaveid);
 				exit(0);
 			}
 			expected_len = htons(*((unsigned short *)(tcpbuf + 4)));
@@ -377,13 +378,12 @@ void *Process(void *ptr)
 			memcpy(rtubuf, tcpbuf + 6, 2);
 			n = read(dev_fd, rtubuf + 2, expected_len - 2);
 			if (debug)
-				Log("%s T:%ld read %d bytes from dev_fd:%d tcp\n", pname,
-				    pthread_self(), n, dev_fd);
+				Log("%s T:%ld read %d bytes from dev_fd:%d tcp\n",
+				    pname, pthread_self(), n, dev_fd);
 			pthread_mutex_unlock(&mutex);
 
 			if (n != expected_len - 2) {
-				Log("%s T:%ld read dev_fd:%d error, expect %d, get %d, exit all\n",
-				    pname, pthread_self(), dev_fd, expected_len - 2, n);
+				Log("%s T:%ld read dev_fd:%d slaveid:%d error, expect %d, get %d, exit all\n", pname, pthread_self(), dev_fd, slaveid, expected_len - 2, n);
 				exit(0);
 			}
 			n = n + 2;
@@ -392,20 +392,21 @@ void *Process(void *ptr)
 			rtubuf[n + 1] = crc & 0x00FF;
 			n = n + 2;
 		} else if (r_type == RTU) {
+			uint8_t slaveid;
+			slaveid = rtubuf[0];
 			n = read(dev_fd, rtubuf, 3);
 			if ((n == -1) && (errno == EAGAIN)) {
 				pthread_mutex_unlock(&mutex);
 				if (timeout_retry_exit <= 0) {
-					Log("%s T:%ld read timeout dev_fd:%d rtu, exit all\n",
-					    pname, pthread_self(), dev_fd);
+					Log("%s T:%ld read timeout dev_fd:%d rtu slaveid:%d, exit all\n", pname, pthread_self(), dev_fd, slaveid);
 					exit(0);
 				}
 				timeout_retry_exit--;
-				Log("%s T:%ld read timeout dev_fd:%d rtu, timeout_retry:%d continue\n", pname, pthread_self(), dev_fd, timeout_retry_exit);
+				Log("%s T:%ld read timeout dev_fd:%d rtu slaveid:%d, timeout_retry:%d continue\n", pname, pthread_self(), dev_fd, slaveid, timeout_retry_exit);
 				continue;
 			}
 			if (n != 3) {
-				Log("%s T:%ld read dev_fd:%d rtu header error, expect 3, get %d, errno=%d, exit all\n", pname, pthread_self(), dev_fd, n, errno);
+				Log("%s T:%ld read dev_fd:%d rtu slaveid:%d header error, expect 3, get %d, errno=%d, exit all\n", pname, pthread_self(), dev_fd, slaveid, n, errno);
 				exit(0);
 			}
 			if (debug)
@@ -444,8 +445,8 @@ void *Process(void *ptr)
 
 			n = read(dev_fd, rtubuf + 3, expected_len - 3);
 			if (debug)
-				Log("%s T:%ld read %d bytes from dev_fd:%d rtu\n", pname,
-				    pthread_self(), n, dev_fd);
+				Log("%s T:%ld read %d bytes from dev_fd:%d rtu\n",
+				    pname, pthread_self(), n, dev_fd);
 
 			pthread_mutex_unlock(&mutex);
 
