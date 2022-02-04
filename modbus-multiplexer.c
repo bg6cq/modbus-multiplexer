@@ -344,7 +344,7 @@ void *Process(void *ptr)
 		if (r_type == TCP) {
 			uint8_t saved_transid[2];
 			uint8_t slaveid;
-			slaveid = tcpbuf[7];
+			slaveid = tcpbuf[6];
 			memcpy(saved_transid, tcpbuf, 2);
 			n = read(dev_fd, tcpbuf, 8);
 			if ((n == -1) && (errno == EAGAIN)) {
