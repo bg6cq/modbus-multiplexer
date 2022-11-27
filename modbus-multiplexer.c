@@ -349,6 +349,8 @@ void *Process(void *ptr)
 			n = read(dev_fd, tcpbuf, 8);
 			if ((n == -1) && (errno == EAGAIN)) {
 				pthread_mutex_unlock(&mutex);
+				if (timeout_retry_exit == -1)
+					continue;
 				if (timeout_retry_exit <= 0) {
 					Log("%s T:%ld read timeout dev_fd:%d tcp slaveid:%d, exit all\n", pname, pthread_self(), dev_fd, slaveid);
 					exit(0);
@@ -397,6 +399,8 @@ void *Process(void *ptr)
 			n = read(dev_fd, rtubuf, 3);
 			if ((n == -1) && (errno == EAGAIN)) {
 				pthread_mutex_unlock(&mutex);
+				if (timeout_retry_exit == -1)
+					continue;
 				if (timeout_retry_exit <= 0) {
 					Log("%s T:%ld read timeout dev_fd:%d rtu slaveid:%d, exit all\n", pname, pthread_self(), dev_fd, slaveid);
 					exit(0);
@@ -438,8 +442,9 @@ void *Process(void *ptr)
 				expected_len = 5;
 				break;
 			default:
-				Log("%s T:%ld unsupported function code: %d, exit all\n",
+				Log("%s T:%ld unsupported function code: %d, sleep 10, exit all\n",
 				    pname, pthread_self(), rtubuf[1]);
+				sleep(10);
 				exit(0);
 			}
 
@@ -524,6 +529,7 @@ void usage()
 	printf("      -n name\n");
 	printf("      -d debug\n");
 	printf("      -e time out retry count before exit all (default is 10)\n");
+	printf("         -1 means no exit\n");
 	printf("      -t time out (1-100, default is 3)\n");
 	printf("      -s tcp_server type\n");
 	printf("      -r remote type\n");
@@ -564,7 +570,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'e':
 			timeout_retry_exit = atoi(optarg);
-			if ((timeout_retry_exit <= 0) || (timeout_retry_exit >= 100))
+			if (timeout_retry_exit <= 0)
+				timeout_retry_exit = -1;
+			else if (timeout_retry_exit >= 100)
 				timeout_retry_exit = 10;
 			break;
 		case 't':
